@@ -1,0 +1,160 @@
+---
+- name: Create KVM virtual machine and install Ubuntu 20.04
+  hosts: localhost
+  tasks:
+    - name: Check is envietment name defined
+      fail:
+        msg: "envietment name is not defined"
+      when: envietment_name is not defined
+
+    - name: Download iamge
+      get_url:
+        url: https://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64-disk-kvm.img
+        dest: "{{ playbook_dir }}/focal-server-cloudimg-amd64-disk-kvm.img"
+        mode: '0644'
+      register: download_result
+
+    - name: Check if ISO was downloaded successfully
+      debug:
+        msg: "Download result: {{ download_result }}"
+
+    - name: Create KVM virtual machine with Ubuntu 20.04
+      command: >
+        uvt-kvm create
+        --template "{{ playbook_dir }}/template.xml"
+        --memory 4096
+        --cpu 2
+        {{envietment_name}}
+        --backing-image "{{ playbook_dir }}/focal-server-cloudimg-amd64-disk-kvm.img"
+
+    - name: Wait for VM to start
+      command: uvt-kvm wait --insecure {{envietment_name}}
+
+    - name: Fetch the IP address of the new VM
+      shell: |
+        uvt-kvm ip {{envietment_name}}
+      register: vm
+
+    - add_host:
+        name: "{{envietment_name}}"
+        groups: "host-group"
+        ansible_host: "{{ vm.stdout }}"
+        ansible_user: "ubuntu"
+
+    - debug:
+        msg: "VM IP address: '{{ vm.stdout }}'"
+
+- name: Install  server
+  hosts: "{{envietment_name}}"
+  become: yes
+  tasks:
+    - name: Install software-properties-common
+      apt:
+        name: software-properties-common
+
+    - name: Add ondrej/php PPA repository
+      apt_repository:
+        repo: ppa:ondrej/php
+        state: present
+        update_cache: yes
+
+    - name: Upgrade all packages to the latest version
+      apt:
+        upgrade: dist
+
+    - name: Install services
+      apt:
+        name:
+          - mc
+          - cmake
+          - net-tools
+          - nginx
+          - php8.1
+          - php8.1-dev
+          - php8.1-cli
+          - php8.1-mbstring
+          - php8.1-curl
+          - php8.1-mysql
+          - php8.1-opcache
+          - php8.1-zip
+          - php8.1-soap
+          - php8.1-xml
+          - php8.1-intl
+          - php8.1-fpm
+          - php8.1-dom
+          - php8.1-pgsql
+          - php8.1-gd
+        state: present
+
+    - name: FPM error_log
+      file:
+        path: /var/log/trackpoint3x-fpm.log
+        state: touch
+        owner: www-data
+        group: www-data
+        mode: '0644'
+
+    - name: Setup composer
+      shell: |
+        php -r "copy('https://getcomposer.org/installer', '/tmp/composer-setup.php');"
+        php -f /tmp/composer-setup.php
+        mv composer.phar /usr/bin/composer
+        chmod +x /usr/bin/composer
+
+    - name: Stop apache
+      shell: |
+        systemctl stop apache2.service || true
+        systemctl disable apache2.service || true
+
+    - name: Prepare
+      shell: |
+        rm -rf /var/www/*
+        rm /etc/php/8.1/fpm/pool.d/*.conf
+        rm /etc/nginx/sites-available/*
+        rm /etc/nginx/sites-enabled/*
+
+    - name: Create workspace
+      file:
+        path: /mnt/workspace
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: '0755'
+
+    - name: Add user www-data to group ubuntu
+      user:
+        name: www-data
+        groups: ubuntu
+        append: yes
+
+    - name: Add user www-data to group ubuntu
+      user:
+        name: ubuntu
+        groups: www-data
+        append: yes
+
+    - name: Mount project direcotry
+      lineinfile:
+        path: /etc/fstab
+        line: "WORKSPACE    /mnt/workspace virtiofs    defaults   0   0"
+        state: present
+        backup: yes
+
+    # - name: Copy nginx
+    #   copy:
+    #     src: "{{ playbook_dir }}/nginx.conf"
+    #     dest: /etc/nginx/conf.d/
+    #
+    # - name: Copy FPM
+    #   copy:
+    #     src: "{{ playbook_dir }}/fpm.conf"
+    #     dest: /etc/php/8.1/fpm/pool.d/
+
+- name: Rebote new VM
+  hosts: localhost
+  tasks:
+    - name: Rebote new VM
+      command: virsh reboot {{envietment_name}}
+
+    - name: Wait for VM to start
+      command: uvt-kvm wait --insecure {{envietment_name}}
