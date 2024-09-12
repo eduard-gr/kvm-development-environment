@@ -45,4 +45,5 @@ ansible-playbook environment.yml --extra-vars "envietment_name={development-envi
 ```sh
 uvt-kvm ssh {development-envietment-name}
 uvt-kvm ip {development-envietment-name}
+virsh start {development-envietment-name}
 ```
