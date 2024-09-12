@@ -14,7 +14,7 @@
   </features>
   <devices>
     <filesystem type="mount">
-      <source dir="/home/eg/Trackpoint"/>
+      <source dir="/home/{WORKSPACE}"/>
       <target dir="WORKSPACE"/>
       <driver type="virtiofs"/>
     </filesystem>
